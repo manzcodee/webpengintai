@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Pengintai - Share & Watch Streams</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans min-h-screen">
+
+<!-- Login Section -->
+<div id="login-section" class="flex items-center justify-center min-h-screen bg-gradient-to-br from-indigo-500 to-purple-600">
+    <div class="text-center p-8 bg-white/10 backdrop-blur-md rounded-2xl shadow-2xl border border-white/20 text-white max-w-sm w-full">
+        <h1 class="text-4xl font-bold mb-2">Web Pengintai</h1>
+        <p class="mb-8 opacity-80 text-sm">Berbagi layar dan kamera menggunakan WebRTC & Firebase</p>
+        <button id="login-btn" class="w-full px-6 py-3 bg-white text-indigo-600 rounded-full font-bold shadow-lg hover:bg-gray-100 transition duration-300">
+            Login with Google
+        </button>
+    </div>
+</div>
+
+<!-- Main App Section -->
+<div id="app-section" class="hidden max-w-6xl mx-auto p-4 md:p-6">
+    <header class="flex flex-col md:flex-row justify-between items-center mb-8 bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+        <div class="mb-4 md:mb-0 text-center md:text-left">
+            <h1 class="text-2xl font-bold text-indigo-600">Web Pengintai</h1>
+            <p class="text-sm text-gray-500">Logged in as: <span id="user-email" class="font-semibold text-gray-800"></span></p>
+        </div>
+        <button id="logout-btn" class="px-5 py-2 bg-red-50 text-red-600 font-semibold rounded-lg shadow-sm border border-red-200 hover:bg-red-100 transition">Logout</button>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- My Controls & Streams -->
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <h2 class="text-xl font-bold mb-4 text-gray-800">1. Izinkan & Bagikan</h2>
+            <p class="text-sm text-gray-500 mb-4">Aktifkan kamera atau layar Anda sebelum orang lain dapat melihatnya.</p>
+            <div class="flex flex-wrap gap-3 mb-6">
+                <button id="start-cam-btn" class="px-4 py-2 bg-blue-500 text-white font-semibold rounded-lg shadow hover:bg-blue-600 transition">📸 Izinkan Kamera</button>
+                <button id="start-screen-btn" class="px-4 py-2 bg-green-500 text-white font-semibold rounded-lg shadow hover:bg-green-600 transition">💻 Izinkan Layar</button>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="bg-gray-50 p-2 rounded-lg border">
+                    <h3 class="text-sm font-semibold mb-2 text-center">Kamera Saya</h3>
+                    <video id="local-cam" autoplay muted playsinline class="w-full h-40 bg-black rounded object-cover"></video>
+                </div>
+                <div class="bg-gray-50 p-2 rounded-lg border">
+                    <h3 class="text-sm font-semibold mb-2 text-center">Layar Saya</h3>
+                    <video id="local-screen" autoplay muted playsinline class="w-full h-40 bg-black rounded object-cover"></video>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search & Connect -->
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <h2 class="text-xl font-bold mb-4 text-gray-800">2. Cari User & Pantau</h2>
+            <p class="text-sm text-gray-500 mb-4">Cari email user yang sudah mengizinkan kamera/layarnya untuk dilihat.</p>
+            <div class="flex gap-2 mb-6">
+                <input type="email" id="search-email" placeholder="Masukkan email user..." class="flex-1 border border-gray-300 p-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <button id="search-btn" class="px-5 py-2.5 bg-indigo-600 text-white font-semibold rounded-lg shadow hover:bg-indigo-700 transition">Cari</button>
+            </div>
+            <div id="search-results" class="space-y-3 max-h-48 overflow-y-auto pr-2">
+                <!-- Search results will appear here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Remote Streams Dashboard -->
+    <div class="mt-8 bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+        <h2 class="text-xl font-bold mb-4 text-gray-800">Beranda Pantauan</h2>
+        <p class="text-sm text-gray-500 mb-4">Layar dan kamera user yang Anda pantau akan muncul di sini.</p>
+        <div id="remote-videos" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- Remote videos will be appended here -->
+        </div>
+    </div>
+</div>
+
+<script type="module">
+  // Import Firebase modules
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-analytics.js";
+  import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
+  import { getFirestore, collection, doc, setDoc, onSnapshot, query, where, getDocs, addDoc, updateDoc } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+
+  // Firebase Configuration
+  const firebaseConfig = {
+    apiKey: "AIzaSyAj4VsvCvNbOHvAdCEygFek67MNJ7jGJso",
+    authDomain: "webpengintai.firebaseapp.com",
+    projectId: "webpengintai",
+    storageBucket: "webpengintai.firebasestorage.app",
+    messagingSenderId: "827592814515",
+    appId: "1:827592814515:web:e32b1f14779eb0573a25c6",
+    measurementId: "G-5472W1GZFZ"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  let currentUser = null;
+  let localCamStream = null;
+  let localScreenStream = null;
+
+  const loginSection = document.getElementById('login-section');
+  const appSection = document.getElementById('app-section');
+  const userEmailEl = document.getElementById('user-email');
+
+  // STUN Servers for WebRTC
+  const servers = {
+      iceServers: [
+          { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }
+      ]
+  };
+
+  // Keep tab active in background using silent audio trick
+  function enableBackgroundMode() {
+      try {
+          const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const oscillator = audioCtx.createOscillator();
+          const gainNode = audioCtx.createGain();
+          gainNode.gain.value = 0; // Silent
+          oscillator.connect(gainNode);
+          gainNode.connect(audioCtx.destination);
+          oscillator.start();
+      } catch (e) {
+          console.log("Background audio trick not supported or failed", e);
+      }
+  }
+
+  // --- AUTHENTICATION ---
+  document.getElementById('login-btn').addEventListener('click', async () => {
+      const provider = new GoogleAuthProvider();
+      try {
+          await signInWithPopup(auth, provider);
+          enableBackgroundMode(); // Activate background keep-alive
+      } catch (error) {
+          console.error("Login failed", error);
+          alert("Gagal login: " + error.message);
+      }
+  });
+
+  document.getElementById('logout-btn').addEventListener('click', () => {
+      signOut(auth);
+  });
+
+  onAuthStateChanged(auth, async (user) => {
+      if (user) {
+          currentUser = user;
+          loginSection.classList.add('hidden');
+          appSection.classList.remove('hidden');
+          userEmailEl.textContent = user.email;
+
+          // Save/update user document automatically
+          await setDoc(doc(db, "users", user.uid), {
+              email: user.email,
+              uid: user.uid,
+              lastActive: new Date().toISOString()
+          }, { merge: true });
+
+          // Start listening for people who want to watch us
+          listenForIncomingCalls();
+      } else {
+          currentUser = null;
+          loginSection.classList.remove('hidden');
+          appSection.classList.add('hidden');
+          document.getElementById('remote-videos').innerHTML = '';
+      }
+  });
+
+  // --- MEDIA PERMISSIONS ---
+  document.getElementById('start-cam-btn').addEventListener('click', async () => {
+      try {
+          localCamStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          document.getElementById('local-cam').srcObject = localCamStream;
+          enableBackgroundMode();
+          alert("Kamera diizinkan. User lain sekarang bisa melihat kamera Anda jika mencari Anda.");
+      } catch (e) {
+          alert('Izin kamera ditolak atau error: ' + e.message);
+      }
+  });
+
+  document.getElementById('start-screen-btn').addEventListener('click', async () => {
+      try {
+          localScreenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+          document.getElementById('local-screen').srcObject = localScreenStream;
+          enableBackgroundMode();
+          alert("Layar diizinkan. User lain sekarang bisa melihat layar Anda jika mencari Anda.");
+      } catch (e) {
+          alert('Izin layar ditolak atau error: ' + e.message);
+      }
+  });
+
+  // --- SEARCH USERS ---
+  document.getElementById('search-btn').addEventListener('click', async () => {
+      const email = document.getElementById('search-email').value.trim();
+      if (!email) return;
+      
+      const q = query(collection(db, "users"), where("email", "==", email));
+      const querySnapshot = await getDocs(q);
+      const resultsDiv = document.getElementById('search-results');
+      resultsDiv.innerHTML = '';
+      
+      if (querySnapshot.empty) {
+          resultsDiv.innerHTML = '<p class="text-sm text-red-500 font-medium p-2">User tidak ditemukan.</p>';
+          return;
+      }
+
+      querySnapshot.forEach((docSnap) => {
+          const userData = docSnap.data();
+          if(userData.uid === currentUser.uid) {
+              resultsDiv.innerHTML = '<p class="text-sm text-yellow-600 font-medium p-2">Itu adalah email Anda sendiri.</p>';
+              return;
+          }
+
+          const div = document.createElement('div');
+          div.className = 'flex justify-between items-center p-3 bg-gray-50 rounded-lg border border-gray-200';
+          div.innerHTML = `
+              <span class="text-sm font-medium text-gray-700">${userData.email}</span>
+              <button class="px-4 py-1.5 bg-indigo-100 text-indigo-700 font-bold text-sm rounded hover:bg-indigo-200 transition watch-btn" data-uid="${userData.uid}" data-email="${userData.email}">Pantau</button>
+          `;
+          resultsDiv.appendChild(div);
+      });
+
+      document.querySelectorAll('.watch-btn').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+              const targetUid = e.target.getAttribute('data-uid');
+              const targetEmail = e.target.getAttribute('data-email');
+              e.target.textContent = "Menghubungkan...";
+              e.target.disabled = true;
+              initiateCall(targetUid, targetEmail);
+          });
+      });
+  });
+
+  // --- WEBRTC SIGNALING (VIEWER) ---
+  async function initiateCall(targetUid, targetEmail) {
+      const callDoc = doc(collection(db, "calls"));
+      const offerCandidates = collection(callDoc, "offerCandidates");
+      const answerCandidates = collection(callDoc, "answerCandidates");
+
+      const pc = new RTCPeerConnection(servers);
+      
+      // Setup to receive audio and video (up to 2 videos for cam + screen)
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      pc.addTransceiver('audio', { direction: 'recvonly' });
+
+      pc.ontrack = (event) => {
+          // Because there might be multiple streams (cam & screen), we process each
+          event.streams.forEach(stream => {
+              addRemoteVideo(targetEmail, stream);
+          });
+      };
+
+      pc.onicecandidate = (event) => {
+          if (event.candidate) {
+              addDoc(offerCandidates, event.candidate.toJSON());
+          }
+      };
+
+      const offerDescription = await pc.createOffer();
+      await pc.setLocalDescription(offerDescription);
+
+      const offer = {
+          sdp: offerDescription.sdp,
+          type: offerDescription.type,
+      };
+
+      await setDoc(callDoc, {
+          caller: currentUser.uid,
+          callee: targetUid,
+          offer: offer
+      });
+
+      onSnapshot(callDoc, (snapshot) => {
+          const data = snapshot.data();
+          if (!pc.currentRemoteDescription && data?.answer) {
+              const answerDescription = new RTCSessionDescription(data.answer);
+              pc.setRemoteDescription(answerDescription);
+          }
+      });
+
+      onSnapshot(answerCandidates, (snapshot) => {
+          snapshot.docChanges().forEach((change) => {
+              if (change.type === 'added') {
+                  const candidate = new RTCIceCandidate(change.doc.data());
+                  pc.addIceCandidate(candidate);
+              }
+          });
+      });
+  }
+
+  // --- WEBRTC SIGNALING (SHARER) ---
+  function listenForIncomingCalls() {
+      const q = query(collection(db, "calls"), where("callee", "==", currentUser.uid));
+      onSnapshot(q, (snapshot) => {
+          snapshot.docChanges().forEach(async (change) => {
+              if (change.type === 'added') {
+                  const callData = change.doc.data();
+                  if (!callData.answer) {
+                      answerCall(change.doc.id, callData);
+                  }
+              }
+          });
+      });
+  }
+
+  async function answerCall(callId, callData) {
+      const callDoc = doc(db, "calls", callId);
+      const offerCandidates = collection(callDoc, "offerCandidates");
+      const answerCandidates = collection(callDoc, "answerCandidates");
+
+      const pc = new RTCPeerConnection(servers);
+
+      // Attach available streams
+      if (localCamStream) {
+          localCamStream.getTracks().forEach(track => pc.addTrack(track, localCamStream));
+      }
+      if (localScreenStream) {
+          localScreenStream.getTracks().forEach(track => pc.addTrack(track, localScreenStream));
+      }
+
+      pc.onicecandidate = (event) => {
+          if (event.candidate) {
+              addDoc(answerCandidates, event.candidate.toJSON());
+          }
+      };
+
+      const offerDescription = new RTCSessionDescription(callData.offer);
+      await pc.setRemoteDescription(offerDescription);
+
+      const answerDescription = await pc.createAnswer();
+      await pc.setLocalDescription(answerDescription);
+
+      const answer = {
+          type: answerDescription.type,
+          sdp: answerDescription.sdp,
+      };
+
+      await updateDoc(callDoc, { answer });
+
+      onSnapshot(offerCandidates, (snapshot) => {
+          snapshot.docChanges().forEach((change) => {
+              if (change.type === 'added') {
+                  const candidate = new RTCIceCandidate(change.doc.data());
+                  pc.addIceCandidate(candidate);
+              }
+          });
+      });
+  }
+
+  // --- UI HELPERS ---
+  function addRemoteVideo(email, stream) {
+      const container = document.getElementById('remote-videos');
+      
+      // Prevent duplicate video elements for the same stream
+      if(document.getElementById(stream.id)) return;
+
+      const div = document.createElement('div');
+      div.className = 'bg-black rounded-lg overflow-hidden relative shadow-md group';
+      
+      const video = document.createElement('video');
+      video.id = stream.id;
+      video.srcObject = stream;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.className = 'w-full h-48 sm:h-56 object-cover';
+      
+      const label = document.createElement('div');
+      label.className = 'absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm text-white px-3 py-1 text-xs font-medium rounded-md';
+      label.textContent = email;
+
+      div.appendChild(video);
+      div.appendChild(label);
+      container.appendChild(div);
+  }
+</script>
+</body>
+</html>
